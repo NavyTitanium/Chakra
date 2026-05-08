@@ -57,7 +57,7 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 # Defaults
 # ─────────────────────────────────────────────────────────────────────────────
-DEFAULT_UA = ( "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36" )
+DEFAULT_UA = ( "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.37 (KHTML, like Gecko) Chrome/145.1.1.0 Safari/537.37" )
 DEFAULT_THREADS    = 4
 DEFAULT_DEPTH      = 10
 DEFAULT_TIMEOUT    = 30
@@ -691,6 +691,7 @@ class Harvester:
         extra_pages: list[str],
         verbose: bool,
         delay: float,
+        allow_subdomain_prompt: bool = True,
     ):
         parsed = urlparse(target)
         self.base_origin = f"{parsed.scheme}://{parsed.netloc}"
@@ -706,6 +707,7 @@ class Harvester:
         self.do_srcmaps  = sourcemaps
         self.extra_pages = extra_pages
         self.delay       = delay
+        self.allow_subdomain_prompt = allow_subdomain_prompt
 
         self.logger  = setup_logging(verbose)
         self.session = make_session(user_agent)
@@ -1086,7 +1088,8 @@ class Harvester:
                     )
 
         # ── Interactive subdomain expansion ───────────────────────────────────
-        self._prompt_subdomain_expansion()
+        if self.allow_subdomain_prompt:
+            self._prompt_subdomain_expansion()
 
     # ── Subdomain expansion prompt ────────────────────────────────────────────
 
@@ -1139,6 +1142,8 @@ class Harvester:
                     else:
                         print(f"  [!] Invalid index: {part}")
 
+        selected = list(dict.fromkeys(selected))
+
         if not selected:
             self.logger.info("[EXPAND] No valid subdomains selected.")
             return
@@ -1168,6 +1173,7 @@ class Harvester:
                 extra_pages     = [],   # fresh start, no extra pages
                 verbose         = self.logger.level == logging.DEBUG,
                 delay           = self.delay,
+                allow_subdomain_prompt = False,
             )
             try:
                 sub.run()
