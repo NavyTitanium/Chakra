@@ -57,7 +57,7 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 # Defaults
 # ─────────────────────────────────────────────────────────────────────────────
-DEFAULT_UA = ( "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.37 (KHTML, like Gecko) Chrome/145.1.1.0 Safari/537.37" )
+DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
 DEFAULT_THREADS    = 4
 DEFAULT_DEPTH      = 10
 DEFAULT_TIMEOUT    = 30
