@@ -20,6 +20,7 @@ Usage:
 import argparse
 import base64
 import hashlib
+import ipaddress
 import json
 import logging
 import gzip
@@ -34,6 +35,7 @@ from threading import Lock
 from urllib.parse import urljoin, urlparse
 
 import requests
+import urllib3
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Optional dependencies
@@ -501,6 +503,7 @@ def recover_sourcemap(
     output_dir: Path,
     session: requests.Session,
     timeout: tuple,
+    verify_tls: bool,
     logger: logging.Logger,
 ) -> int:
     """
@@ -533,7 +536,12 @@ def recover_sourcemap(
 
     logger.info(f"[SRCMAP] Fetching {map_url}")
     try:
-        r = session.get(map_url, timeout=timeout, allow_redirects=True)
+        r = session.get(
+            map_url,
+            timeout=timeout,
+            allow_redirects=True,
+            verify=verify_tls,
+        )
         r.raise_for_status()
         raw = decompress_response(r, logger)
         map_data = json.loads(raw.decode("utf-8", errors="replace"))
@@ -643,8 +651,10 @@ def get_apex_domain(netloc: str) -> str:
     e.g. "api.findtender.ca" -> "findtender.ca"
          "app.example.co.uk" -> "example.co.uk"
     """
-    # Strip port
-    host = netloc.split(':')[0].lower()
+    parsed = urlparse(f"//{netloc}")
+    host = (parsed.hostname or netloc).lower()
+    if is_ip_host(host):
+        return host
     parts = host.split('.')
 
     # Known two-part TLDs (non-exhaustive but covers common cases)
@@ -667,6 +677,14 @@ def get_apex_domain(netloc: str) -> str:
         return '.'.join(parts[-2:])
 
     return host
+
+
+def is_ip_host(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -697,6 +715,9 @@ class Harvester:
         self.base_origin = f"{parsed.scheme}://{parsed.netloc}"
         self.target      = target
         self.apex_domain = get_apex_domain(parsed.netloc)
+        self.verify_tls  = not (
+            parsed.scheme == "https" and is_ip_host(parsed.hostname or "")
+        )
         self.output_dir  = output_dir
         self.threads     = threads
         self.max_depth   = depth
@@ -711,6 +732,8 @@ class Harvester:
 
         self.logger  = setup_logging(verbose)
         self.session = make_session(user_agent)
+        if not self.verify_tls:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         # BFS
         self._visited:      set[str]               = set()
@@ -799,7 +822,12 @@ class Harvester:
         last_err = "unknown"
         for attempt in range(1, self.retries + 1):
             try:
-                r = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+                r = self.session.get(
+                    url,
+                    timeout=self.timeout,
+                    allow_redirects=True,
+                    verify=self.verify_tls,
+                )
                 r.raise_for_status()
                 return r
             except requests.exceptions.HTTPError as e:
@@ -852,7 +880,7 @@ class Harvester:
 
         if self.do_srcmaps:
             n = recover_sourcemap(text, url, self.output_dir,
-                                  self.session, self.timeout, self.logger)
+                                  self.session, self.timeout, self.verify_tls, self.logger)
             if n:
                 with self._sm_lock:
                     self._sm_recovered += n
@@ -876,7 +904,12 @@ class Harvester:
         last_err = "unknown"
         for attempt in range(1, self.retries + 1):
             try:
-                resp = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+                resp = self.session.get(
+                    url,
+                    timeout=self.timeout,
+                    allow_redirects=True,
+                    verify=self.verify_tls,
+                )
                 resp.raise_for_status()
                 break
             except requests.exceptions.HTTPError as e:
@@ -1015,6 +1048,9 @@ class Harvester:
         self.logger.info(f"  Extra pages  : {', '.join(self.extra_pages) or 'none'}")
         self.logger.info(f"  jsbeautifier : {'yes' if JSBEAUTIFIER_AVAILABLE else 'NOT installed'}")
         self.logger.info(f"  brotli       : {'yes' if BROTLI_AVAILABLE else 'NOT installed'}")
+        self.logger.info(f"  TLS verify   : {self.verify_tls}")
+        if not self.verify_tls:
+            self.logger.warning("  HTTPS target is an IP address; TLS certificate verification disabled for this run.")
         self.logger.info("=" * 72)
 
         t0 = time.time()
