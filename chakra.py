@@ -213,6 +213,26 @@ def url_to_filename(url: str, output_dir: Path) -> Path:
     return path
 
 
+def sanitise_path_parts(raw_path: str) -> Path | None:
+    cleaned_parts: list[str] = []
+
+    for part in Path(raw_path).parts:
+        if part in ("", ".", "/"):
+            continue
+        if part == "..":
+            return None
+
+        safe_part = re.sub(r'[^A-Za-z0-9._ -]', "_", part).strip(" .")
+        if not safe_part:
+            safe_part = "_"
+        cleaned_parts.append(safe_part)
+
+    if not cleaned_parts:
+        return None
+
+    return Path(*cleaned_parts)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # JS URL extraction
 # ─────────────────────────────────────────────────────────────────────────────
@@ -591,7 +611,12 @@ def _write_sources(map_data: dict, js_url: str, output_dir: Path, logger: loggin
             else f"// source content unavailable: {src_path}\n"
         )
 
-        out = base_dir / Path(src_path)
+        safe_rel = sanitise_path_parts(src_path)
+        if safe_rel is None:
+            logger.debug(f"[SRCMAP] skipped unsafe path: {src_path}")
+            continue
+
+        out = base_dir / safe_rel
         try:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(content, encoding="utf-8", errors="replace")
